@@ -46,6 +46,8 @@ int main(int argc, char **argv)
 
    //Create our http class sending the port and directory
    http *server = new http(port, dir);
+   cout << "Server open on port: " << port << endl;
+   cout << "Server directory:    " << dir << endl;
    
    //Setup our server to listen on port <port>
    server->tcp_listen();
@@ -206,14 +208,11 @@ void http::make_header(int statuscode)
    sprintf(status, "%d", statuscode);
 
    strcpy(output, method); strcat(output, "\t"); 
-   if(file != NULL) 
+   if(file != NULL && strcmp(file, "ico") != 0) 
    {
       strcat(output, file); 
    }
-   else 
-   {
-      strcat(output, "ERROR\t");
-   }
+   
    strcat(output, "\t"); strncat(output, ctime(&ticks), strlen(ctime(&ticks))-1); 
    strcat(output, "\t"); strcat(output, status); 
    
