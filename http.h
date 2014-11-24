@@ -1,3 +1,7 @@
+/*
+ * http server header
+* http structure class
+*/
 #include "common.h"
 
 class http {

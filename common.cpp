@@ -1,3 +1,9 @@
+/*
+ * Common header
+ * err_n_die() function
+ * print error then kill server
+*/
+
 #include "common.h"
 
 void err_n_die(int error)
