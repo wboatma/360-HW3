@@ -18,6 +18,44 @@ http::~http()
 }
 
 
+int main(int argc, char **argv)
+{
+ 	char dir[64] = "./";
+ 
+   if(argc > 4)
+   {
+      err_n_die(BADARGS);
+   } 
+
+   //copy the directory and get the port	
+	if(argc == 3 || argc == 4) {
+		memcpy(dir, argv[argc - 1], strlen(argv[argc - 1]));	
+	} 
+   
+   int port = 8080;
+
+   int c;
+   while((c = getopt(argc, argv, "p:")) != -1)
+   {
+      switch(c) {
+         case 'p':
+            port = atoi(optarg);
+            break;
+      }
+   }
+
+   //Create our http class sending the port and directory
+   http *server = new http(port, dir);
+   
+   //Setup our server to listen on port <port>
+   server->tcp_listen();
+
+   delete(server);
+
+   return 0;
+}
+
+
 void http::tcp_listen()
 {
    if((listenfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -242,12 +280,8 @@ void http::write_content_info()
 int http::check_request(char *token)
 {
    char *tok = strtok(token, " ");
-   int dir_depth = 0;
-   if(dir[0] == '/')
-   {
-      dir_depth = 1;
-   }
-   else if(dir[1] == '/')
+   int dir_depth = 1;
+   if(dir[1] == '/')
    {
       dir_depth = 2;
    }
@@ -262,8 +296,9 @@ int http::check_request(char *token)
    if(strcmp(tok, "GET") == 0 || strcmp(tok, "HEAD") == 0)
    {
       tok = strtok(NULL, " ");
+      char *tok_temp = strtok(tok, "/");
       //Make sure the requested page is within the server directory
-      if(strcmp(strtok(tok, "/"), dir+dir_depth) == 0) 
+      if(strcmp(tok_temp, dir+dir_depth) == 0)
       {
          tok = strtok(NULL, " ");
          if(tok != NULL)
@@ -371,40 +406,4 @@ int http::get_ext()
    strcpy(ext, tok);
    
    return 200;
-}
-
-
-int main(int argc, char **argv)
-{
-   if(argc == 3 || argc > 4 || argc < 2)
-   {
-      err_n_die(BADARGS);
-   } 
-
-   //copy the directory and get the port
-   char *dir = (char *)malloc(strlen(argv[argc - 1]));
-   memcpy(dir, argv[argc - 1], strlen(argv[argc - 1]));
-
-   int port = 8080;
-
-   int c;
-   while((c = getopt(argc, argv, "p:")) != -1)
-   {
-      switch(c) {
-         case 'p':
-            port = atoi(optarg);
-            break;
-      }
-   }
-
-   //Create our http class sending the port and directory
-   http *server = new http(port, dir);
-   
-   //Setup our server to listen on port <port>
-   server->tcp_listen();
-
-   delete(server);
-   free(dir);
-
-   return 0;
 }
