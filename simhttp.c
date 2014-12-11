@@ -1,194 +1,154 @@
 /* 
- * William Beasley
- * William Boatman
+ * William Beasley - C88846536
+ * William Boatman - C16779898
  * CPSC 3600 HW3
  * Dr. Sekou Remy
  * TCP HTTP Server
  * Parses HTTP Requests such as GET
  * Displays the pages and images on websites if accessed
  */
+ 
+#include "simhttp.h"
 
-#include <sys/socket.h>       /*  socket definitions        */
-#include <sys/types.h>        /*  socket types              */
-#include <arpa/inet.h>        /*  inet (3) funtions         */
-#include <unistd.h>           /*  misc. UNIX functions      */
-#include <stdio.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
-#include <ctype.h>
-#include <sys/time.h> 
-#include <fcntl.h>
-#include <time.h>
-#include <sys/stat.h>
-
+/***Macro Definitions***/
 #define DEFINED_LISTEN_VAL      	1024
 #define DEFAULT_SERVER_PORT 		8080
 #define MAX_REQUESTED_LINE_SIZE     1024
 
-enum REQUESTED_HTTP_METHOD {
-	GET, HEAD, UNSUPPORTED
-};
-enum REQUESTED_HTTP_TYPE {
-	SIMPLE, FULL
-};
-
-struct Request_Info {
-	char *Referer, *Current_User, *Current_User_Resource;
-	int Http_Request_Status;
-	enum REQUESTED_HTTP_METHOD Http_Method;
-	enum REQUESTED_HTTP_TYPE type;
-};
-
-int Return_Resources(int connecection, int Current_User_Resource, struct Request_Info * Requested_Info);
-int Check_Resource(struct Request_Info * Requested_Info);
-void Die_With_Error(char const * msg);
-int Trim_String_Buffer(char * buffer);
-int String_to_Upper(char * buffer);
-void CleanURL(char * buffer);
-ssize_t Read_Requested_Line(int sockd, void *voidptr, size_t maxlen);
-ssize_t Write_Http_Line(int sockd, const void *voidptr, size_t n);
-void printTime();
-int OUT_HTTP_HEADER(int connecection, struct Request_Info * Requested_Info);
-int Return_Error_Msgs(int connecection, struct Request_Info * Requested_Info);
-int Request_Service(int connecection);
-int PARSE_HTTP_REQUEST(char * buffer, struct Request_Info * Requested_Info);
-int GET_REQUEST(int connecection, struct Request_Info * Requested_Info);
-void Request_Initial_Info(struct Request_Info * Requested_Info);
-void Free_Requested_Information(struct Request_Info * Requested_Info);
-
+/***Global Declerations***/
 static char server_root[1000] = "./";
-char* Months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-char* Days[] = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
-char* Http_Method[] = {"GET", "HEAD", "UNSUPPORTED"};
-struct Request_Info Requested_Info;
+char file_path[1000] = { 0 };
+char *months[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul",
+												"Aug","Sep","Oct","Nov","Dec"};
+char *days[] = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+char *http_method[] = {"GET", "HEAD", "UNSUPPORTED"};
+struct request_info requested_info;
+
 
 int main(int argc, char *argv[]) {
-	int listener, connecection;
+	int sock, connection;
 	struct sockaddr_in servaddr;
 	unsigned short servPort;
 
-	if (argv[2] != NULL) {
+	if (argc >= 3) {
 		servPort = atoi(argv[2]);
 	} else {
 		servPort = DEFAULT_SERVER_PORT ;
 	}
 
-	if (argv[3] != NULL) {
+	if (argc == 2) {
+		strcpy(server_root, argv[1]);
+	} else if(argc == 4) {
 		strcpy(server_root, argv[3]);
 	}
 
-	if ((listener = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-		Die_With_Error("Error: Server couldn't create listening socket.");
+	// Create our tcp socket
+	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+		die_with_error("Error: Server couldn't create listening socket.");
 
+	int optval = 1;
+	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
+
+	// Setup our socket address structure
 	memset(&servaddr, 0, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
 	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	servaddr.sin_port = htons(servPort);
 
-	if (bind(listener, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
-		Die_With_Error("Error: Server couldn't bind listening socket.");
-
-	if (listen(listener, DEFINED_LISTEN_VAL) < 0)
-		Die_With_Error("Error: call to listen failed.");
+	if (bind(sock, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
+		die_with_error("Error: Server couldn't bind listening socket.");
+	
+	// Listen for incoming connections
+	if (listen(sock, DEFINED_LISTEN_VAL) < 0)
+		die_with_error("Error: call to listen failed.");
 	
 	while (1) {
+		if ((connection = accept(sock, NULL, NULL)) < 0) // Wait for connection
+			die_with_error("Error: failed on calling accept()");
 
-		if ((connecection = accept(listener, NULL, NULL)) < 0)
-			Die_With_Error("Error: failed on calling accept()");
+		request_service(connection);
 
-		if (close(listener) < 0)
-			Die_With_Error("Error: failed when closing listening socket.");
-
-		Request_Service(connecection);
-
-		printf("%s\t", Http_Method[Requested_Info.Http_Method]);
-		printf("%s\t", Requested_Info.Current_User_Resource);
-		printTime();
-		printf("\t%d\n", Requested_Info.Http_Request_Status);
-
-		if (close(connecection) < 0)
-			Die_With_Error("Error: Failed when closing connection socket.");
-		exit(EXIT_SUCCESS);
-
-		if (close(connecection) < 0)
-			Die_With_Error("Error: Failed when closing connection socket.");
+		printf("%s\t", http_method[requested_info.http_method]);
+		printf("%s\t", requested_info.current_user_resource);
+		print_results();
+		printf("\t%d\n", requested_info.http_request_status);
 		
+		free(requested_info.current_user_resource);
+		if (close(connection) < 0)
+			die_with_error("Error: Failed when closing connection socket.");
+		exit(1);
 	}
-
+	
 	return EXIT_FAILURE; 
 }
 
-void printTime() {
-
+void print_results() {
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t);
 
 	printf("%d %s %d %d:%02d ", 
-		tm.tm_mday, Months[tm.tm_mon], tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
+		tm.tm_mday, months[tm.tm_mon], tm.tm_year + 1900, tm.tm_hour, tm.tm_min);
 }
 
-int Request_Service(int connecection) {
+int request_service(int connection) {
+	int current_user_resource = 0;
 
-	int Current_User_Resource = 0;
-
-	Request_Initial_Info(&Requested_Info);
+	request_initial_info(&requested_info);
 	
-	if (GET_REQUEST(connecection, &Requested_Info) < 0) {
-		Requested_Info.Http_Request_Status = 400;
+	if (get_request(connection, &requested_info) < 0) {
+		requested_info.http_request_status = 400;
 		return -1;
 	}
 
-	if (Requested_Info.Http_Request_Status == 200)
-		if ((Current_User_Resource = Check_Resource(&Requested_Info)) < 0) {
+	if (requested_info.http_request_status == 200) {
+		if ((current_user_resource = check_resource(&requested_info)) < 0) {
 			if (errno == EACCES)
-				Requested_Info.Http_Request_Status = 403;
+				requested_info.http_request_status = 403;
 			else
-				Requested_Info.Http_Request_Status = 404;
+				requested_info.http_request_status = 404;
 		}
+	}
+	
+	if (requested_info.type == FULL)
+		out_http_header(connection, &requested_info);
 
-	if (Requested_Info.type == FULL)
-		OUT_HTTP_HEADER(connecection, &Requested_Info);
-
-	if (Requested_Info.Http_Request_Status == 200) {
-		if (Return_Resources(connecection, Current_User_Resource, &Requested_Info))
-			Die_With_Error("Error: Something went wrong returning Current_User_Resource.");
+	if (requested_info.http_request_status == 200) {
+		if (return_resources(connection, current_user_resource, &requested_info))
+			die_with_error("Error: Something went wrong returning current_user_resource.");
 	} else
-		Return_Error_Msgs(connecection, &Requested_Info);
+		return_error_message(connection, &requested_info);
 
-	if (Current_User_Resource > 0)
-		if (close(Current_User_Resource) < 0)
-			Die_With_Error("Error: Failed during closing of Current_User_Resource.");
+	if (current_user_resource > 0)
+		if (close(current_user_resource) < 0)
+			die_with_error("Error: Failed during closing of current_user_resource.");
 
 	return 0;
 }
 
-int PARSE_HTTP_REQUEST(char * buffer, struct Request_Info * Requested_Info) {
-
-	static int Header = 1;
+int parse_http_request(char *buffer, struct request_info *requested_info) {
 	char *temp;
 	char *endptr;
 	int len = 0;
 
-	if (Header == 1) {
+	if (requested_info->http_method == UNSUPPORTED && 
+												 requested_info->http_request_status == 200) {
 		if (!strncmp(buffer, "GET /../", 8)) {
-			Requested_Info->Http_Method = GET;
-			Requested_Info->Http_Request_Status = 403;
+			requested_info->http_method = GET;
+			requested_info->http_request_status = 403;
 			buffer +=4;
 		} else if (!strncmp(buffer, "GET /", 5)) {
-			Requested_Info->Http_Method = GET;
+			requested_info->http_method = GET;
 			buffer += 4;
 		} else if (!strncmp(buffer, "HEAD /", 6)) {
-			Requested_Info->Http_Method = HEAD;
+			requested_info->http_method = HEAD;
 			buffer += 5;
 		} else if (strncmp(buffer, "GET ", 4) == 0 && strncmp(buffer, "GET /", 5) != 0) {
-			Requested_Info->Http_Method = GET;
-			Requested_Info->Http_Request_Status = 400;
+			requested_info->http_method = GET;
+			requested_info->http_request_status = 400;
 			buffer += 5;
-		}
-		else {
-			Requested_Info->Http_Method = UNSUPPORTED;
-			Requested_Info->Http_Request_Status = 405;
+		} else {
+			requested_info->http_method = UNSUPPORTED;
+			requested_info->http_request_status = 405;
 			return -1;
 		}
 
@@ -201,31 +161,31 @@ int PARSE_HTTP_REQUEST(char * buffer, struct Request_Info * Requested_Info) {
 		else
 			len = endptr - buffer;
 		if (len == 0) {
-			Requested_Info->Http_Request_Status = 400;
+			requested_info->http_request_status = 400;
 			return -1;
 		}
 
-		Requested_Info->Current_User_Resource = calloc(len + 1, sizeof(char));
-		strncpy(Requested_Info->Current_User_Resource, buffer, len);
+		requested_info->current_user_resource = malloc(len);
+		bzero(requested_info->current_user_resource, len);
+		strncpy(requested_info->current_user_resource, buffer, len);
 
 		if (strstr(buffer, "HTTP/"))
-			Requested_Info->type = FULL;
+			requested_info->type = FULL;
 		else
-			Requested_Info->type = SIMPLE;
+			requested_info->type = SIMPLE;
 
-		Header = 0;
 		return 0;
 	}
 
 	endptr = strchr(buffer, ':');
 	if (endptr == NULL) {
-		Requested_Info->Http_Request_Status = 400;
+		requested_info->http_request_status = 400;
 		return -1;
 	}
 
-	temp = calloc((endptr - buffer) + 1, sizeof(char));
+	temp = malloc((endptr - buffer) + 1);
 	strncpy(temp, buffer, (endptr - buffer));
-	String_to_Upper(temp);
+	string_to_upper(temp);
 
 	buffer = endptr + 1;
 	while (*buffer && isspace(*buffer))
@@ -234,19 +194,18 @@ int PARSE_HTTP_REQUEST(char * buffer, struct Request_Info * Requested_Info) {
 		return 0;
 
 	if (!strcmp(temp, "USER-AGENT")) {
-		Requested_Info->Current_User = malloc(strlen(buffer) + 1);
-		strcpy(Requested_Info->Current_User, buffer);
+		requested_info->current_user = malloc(strlen(buffer) + 1);
+		strcpy(requested_info->current_user, buffer);
 	} else if (!strcmp(temp, "REFERER")) {
-		Requested_Info->Referer = malloc(strlen(buffer) + 1);
-		strcpy(Requested_Info->Referer, buffer);
+		requested_info->referer = malloc(strlen(buffer) + 1);
+		strcpy(requested_info->referer, buffer);
 	}
 
 	free(temp);
 	return 0;
 }
 
-int GET_REQUEST(int connecection, struct Request_Info * Requested_Info) {
-
+int get_request(int connection, struct request_info *requested_info) {
 	char buffer[MAX_REQUESTED_LINE_SIZE ] = { 0 };
 	int return_val;
 	fd_set fds;
@@ -257,46 +216,49 @@ int GET_REQUEST(int connecection, struct Request_Info * Requested_Info) {
 
 	do {
 		FD_ZERO(&fds);
-		FD_SET(connecection, &fds);
+		FD_SET(connection, &fds);
 
-		return_val = select(connecection + 1, &fds, NULL, NULL, &tv);
+		return_val = select(connection + 1, &fds, NULL, NULL, &tv);
 		if (return_val < 0) {
-			Die_With_Error("Error: Failed when calling select() in GET_REQUEST() Http_Method.");
+			die_with_error("Error: Failed when calling select() \
+											in get_request() http_method.");
 		} else if (return_val == 0) {
-
 			return -1;
-
 		} else {
-			Read_Requested_Line(connecection, buffer, MAX_REQUESTED_LINE_SIZE  - 1);
-			Trim_String_Buffer(buffer);
+			read_requested_line(connection, buffer, MAX_REQUESTED_LINE_SIZE  - 1);
+			trim_string_buffer(buffer);
 
 			if (buffer[0] == '\0')
 				break;
 
-			if (PARSE_HTTP_REQUEST(buffer, Requested_Info))
+			if (parse_http_request(buffer, requested_info))
 				break;
 		}
-	} while (Requested_Info->type != SIMPLE);
+	} while (requested_info->type != SIMPLE);
 
 	return 0;
 }
-void Request_Initial_Info(struct Request_Info * Requested_Info) {
-	Requested_Info->Current_User = NULL;
-	Requested_Info->Referer = NULL;
-	Requested_Info->Current_User_Resource = NULL;
-	Requested_Info->Http_Method = UNSUPPORTED;
-	Requested_Info->Http_Request_Status = 200;
-}
-void Free_Requested_Information(struct Request_Info * Requested_Info) {
-	if (Requested_Info->Current_User)
-		free(Requested_Info->Current_User);
-	if (Requested_Info->Referer)
-		free(Requested_Info->Referer);
-	if (Requested_Info->Current_User_Resource)
-		free(Requested_Info->Current_User_Resource);
-}
-int OUT_HTTP_HEADER(int connecection, struct Request_Info * Requested_Info) {
 
+void request_initial_info(struct request_info *requested_info) {
+	requested_info->current_user = NULL;
+	requested_info->referer = NULL;
+	requested_info->current_user_resource = NULL;
+	requested_info->http_method = UNSUPPORTED;
+	requested_info->http_request_status = 200;
+	bzero(file_path, 1000);
+	strcpy(file_path, server_root);
+}
+
+void free_requested_information(struct request_info *requested_info) {
+	if (requested_info->current_user)
+		free(requested_info->current_user);
+	if (requested_info->referer)
+		free(requested_info->referer);
+	if (requested_info->current_user_resource)
+		free(requested_info->current_user_resource);
+}
+
+int out_http_header(int connection, struct request_info *requested_info) {
 	char buffer[100];
 	struct stat fileStat;
     stat(server_root,&fileStat);
@@ -308,87 +270,91 @@ int OUT_HTTP_HEADER(int connecection, struct Request_Info * Requested_Info) {
 	struct tm * la;
 	la = localtime(&(fileStat.st_atime));
 	
-	sprintf(buffer, "HTTP/1.1 %d OK\r\n", Requested_Info->Http_Request_Status);
-	Write_Http_Line(connecection, buffer, strlen(buffer));
+	sprintf(buffer, "HTTP/1.1 %d OK\r\n", requested_info->http_request_status);
+	write_http_line(connection, buffer, strlen(buffer));
 
 	memset(buffer, 0, 100);
 	sprintf(buffer, "Date: %s, %d %s %d %d:%d:%d\r\n", 
-		Days[date->tm_wday], date->tm_mday, Months[date->tm_mon], date->tm_year + 1900,
+		days[date->tm_wday], date->tm_mday, months[date->tm_mon], date->tm_year + 1900,
 		date->tm_hour, date->tm_min, date->tm_sec);
-	Write_Http_Line(connecection, buffer, strlen(buffer));
+	write_http_line(connection, buffer, strlen(buffer));
 
 	memset(buffer, 0, 100);
 	sprintf(buffer, "Last-Modified: %s, %d %s %d %d:%d:%d\r\n", 
-		Days[la->tm_wday], la->tm_mday, Months[la->tm_mon], la->tm_year + 1900,
+		days[la->tm_wday], la->tm_mday, months[la->tm_mon], la->tm_year + 1900,
 		la->tm_hour, la->tm_min, la->tm_sec);
-	Write_Http_Line(connecection, buffer, strlen(buffer));
-	Write_Http_Line(connecection, "Content -Type: text/html\r\n", 26);
+	write_http_line(connection, buffer, strlen(buffer));
+	write_http_line(connection, "Content -Type: text/html\r\n", 26);
 
 	memset(buffer, 0, 100);
 	sprintf(buffer, "Content -Length: %ld\r\n", fileStat.st_size);
-	Write_Http_Line(connecection, buffer, strlen(buffer));
+	write_http_line(connection, buffer, strlen(buffer));
  
-	Write_Http_Line(connecection, "Server: simhttp\r\n", 17);
-	Write_Http_Line(connecection, "\r\n", 2);
+	write_http_line(connection, "Server: simhttp\r\n", 17);
+	write_http_line(connection, "\r\n", 2);
 
 	return 0;
 }
 
-int Return_Resources(int connecection, int Current_User_Resource, struct Request_Info * Requested_Info) {
-
+int return_resources(int connection, int current_user_resource, 
+													struct request_info *requested_info) {
 	char c;
 	int i;
 
-	while ((i = read(Current_User_Resource, &c, 1))) {
+	while ((i = read(current_user_resource, &c, 1))) {
 		if (i < 0)
-			Die_With_Error("Error: Failed when reading from file.");
-		if (write(connecection, &c, 1) < 1)
-			Die_With_Error("Error: Failed when sending file.");
+			die_with_error("Error: Failed when reading from file.");
+		if (write(connection, &c, 1) < 1)
+			die_with_error("Error: Failed when sending file.");
 	}
 
 	return 0;
 }
 
-int Check_Resource(struct Request_Info * Requested_Info) {
-	CleanURL(Requested_Info->Current_User_Resource);
-	strcat(server_root, Requested_Info->Current_User_Resource);
-	return open(server_root, O_RDONLY);
+int check_resource(struct request_info *requested_info) {
+	cleanURL(requested_info->current_user_resource);
+	strcat(file_path, requested_info->current_user_resource);
+	return open(file_path, O_RDONLY);
 }
-int Return_Error_Msgs(int connecection, struct Request_Info * Requested_Info) {
 
+int return_error_message(int connection, struct request_info *requested_info) {
 	char buffer[100];
 
-	if (Requested_Info->Http_Request_Status == 400) {
-		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Bad Request</TITLE>\n</HEAD>\n\n", Requested_Info->Http_Request_Status);
-		Write_Http_Line(connecection, buffer, strlen(buffer));
+	if (requested_info->http_request_status == 400) {
+		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Bad Request</TITLE>\n</HEAD>\n\n", 
+																	requested_info->http_request_status);
+		write_http_line(connection, buffer, strlen(buffer));
 	}
-	else if (Requested_Info->Http_Request_Status == 403) {
-		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Forbidden</TITLE>\n</HEAD>\n\n", Requested_Info->Http_Request_Status);
-		Write_Http_Line(connecection, buffer, strlen(buffer));
-		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Bad</TITLE>\n</HEAD>\n\n", Requested_Info->Http_Request_Status);
-		Write_Http_Line(connecection, buffer, strlen(buffer));
+	else if (requested_info->http_request_status == 403) {
+		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Forbidden</TITLE>\n</HEAD>\n\n", 
+																 requested_info->http_request_status);
+		write_http_line(connection, buffer, strlen(buffer));
+		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>%d Bad</TITLE>\n</HEAD>\n\n", 
+															 requested_info->http_request_status);
+		write_http_line(connection, buffer, strlen(buffer));
 	}
 	else {
-		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>Server Error%d</TITLE>\n</HEAD>\n\n", Requested_Info->Http_Request_Status);
-		Write_Http_Line(connecection, buffer, strlen(buffer));
+		sprintf(buffer, "<HTML>\n<HEAD>\n<TITLE>Server Error%d</TITLE>\n</HEAD>\n\n", 
+																	requested_info->http_request_status);
+		write_http_line(connection, buffer, strlen(buffer));
 	}
-	sprintf(buffer, "<BODY>\n<H1>Server Error %d</H1>\n", Requested_Info->Http_Request_Status);
-	Write_Http_Line(connecection, buffer, strlen(buffer));
+	sprintf(buffer, "<BODY>\n<H1>Server Error %d</H1>\n", 
+											requested_info->http_request_status);
+	write_http_line(connection, buffer, strlen(buffer));
 
 	sprintf(buffer, "<P>The request could not be completed.</P>\n"
 			"</BODY>\n</HTML>\n");
-	Write_Http_Line(connecection, buffer, strlen(buffer));
+	write_http_line(connection, buffer, strlen(buffer));
 
 	return 0;
-
 }
-// Twist on Die with Error from previous homeworks
-void Die_With_Error(char const * msg) {
-	fprintf(stderr,"WEBSERV: %s\n", msg);
+
+void die_with_error(char const *message) {
+	fprintf(stderr,"WEBSERV: %s\n", message);
 	exit(EXIT_FAILURE);
 }
 
-ssize_t Read_Requested_Line(int sockd, void *void_pointer, size_t maxlen) {
+ssize_t read_requested_line(int sockd, void *void_pointer, size_t maxlen) {
 	ssize_t n, rc;
 	char c, *buffer;
 
@@ -408,7 +374,7 @@ ssize_t Read_Requested_Line(int sockd, void *void_pointer, size_t maxlen) {
 		} else {
 			if (errno == EINTR)
 				continue;
-			Die_With_Error("Error in Read_Requested_Line()");
+			die_with_error("Error in read_requested_line()");
 		}
 	}
 	//printf("%s\n", buffer);
@@ -416,7 +382,7 @@ ssize_t Read_Requested_Line(int sockd, void *void_pointer, size_t maxlen) {
 	return n;
 }
 
-ssize_t Write_Http_Line(int sockd, const void *void_pointer, size_t n) {
+ssize_t write_http_line(int sockd, const void *void_pointer, size_t n) {
 	size_t nleft;
 	ssize_t nwritten;
 	const char *buffer;
@@ -429,7 +395,7 @@ ssize_t Write_Http_Line(int sockd, const void *void_pointer, size_t n) {
 			if (errno == EINTR)
 				nwritten = 0;
 			else
-				Die_With_Error("Error in Write_Http_Line()");
+				die_with_error("Error in write_http_line()");
 		}
 		nleft -= nwritten;
 		buffer += nwritten;
@@ -438,7 +404,7 @@ ssize_t Write_Http_Line(int sockd, const void *void_pointer, size_t n) {
 	return n;
 }
 
-int Trim_String_Buffer(char * buffer) {
+int trim_string_buffer(char *buffer) {
 	int n = strlen(buffer) - 1;
 
 	while (!isalnum(buffer[n]) && n >= 0)
@@ -447,7 +413,7 @@ int Trim_String_Buffer(char * buffer) {
 	return 0;
 }
 
-int String_to_Upper(char * buffer) {
+int string_to_upper(char *buffer) {
 	while (*buffer) {
 		*buffer = toupper(*buffer);
 		++buffer;
@@ -455,7 +421,7 @@ int String_to_Upper(char * buffer) {
 	return 0;
 }
 
-void CleanURL(char * buffer) {
+void cleanURL(char *buffer) {
 	char asciinum[3] = { 0 };
 	int i = 0, c;
 
