@@ -1,5 +1,5 @@
 
-CC=clang
+CC=gcc
 CFLAGS=-Wall -g
 
 BINS=simhttp

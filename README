@@ -1,21 +1,17 @@
-William Boatman
-William Beasley
+William Boatman - C16779898
+William Beasley - C88846536
 CpSc 360, Homework 3
-
+Dr. Sekou Remy
 
 DESCRIPTION:
-This project essentialy was to build a small working webserver, that could serve up http requests. The requests fully supported are GET and HEAD. If a user requests a file within the "website" directory, then the server will send an http response back with the requested information.
+This project was to build a small working webserver, that could serve up http requests. The requests fully supported are GET and HEAD. If a user requests a file within the "website" directory, then the server will send an http response back with the requested information.
 
 
 COMMENTS:
-I sometimes find that I get random segfaults, but this only happens occasionally. An identical set of tasks could cause the program to segfault, yet I have only rarely encountered this problem. 
-The code only works if the requested directory is in a subdirectory "./website" or a single directory up "../website" I believe this follows the specification, but I wasn't entirely sure.
-
+Interesting trying to figure out all the different ways you have to construct/analyze requests for simple web servers.
 
 KNOWN PROBLEMS:
-The only known problem that exists, as mentioned in the comments, is due to a random segfault after a request is sent. This isn't a common problem, but may occur.
-
+The only problems we know that exist is that different file types are not currently working. I believe this to be a simple problem with opening the files in the right mode, but we did not get the chance to fix this problem.
 
 DESIGN:
-I set this program up to, first and foremost, receive a connection from a tcp socket through an http request. The connection will wait until a request has been received, it will then parse the request and write back a response. The write back buffer is a char array that has all of the header and content data strcat'ed to it. The exception to this is if a file is not a text based file (.txt .html .htm .php .js), then the program reads the data and interprets everything as binary data. It will stat the file, if it exists, and  retrieve the size, malloc the proper space and then memcpy the file into the content buffer. After the requested response has been sent the server will close the connection and free up all of the dynamically allocated memory (hopefully). The supported status codes are as follows: 200 OK, 400 BAD REQUEST, 403 FORBIDDEN, 404 NOT FOUND, and 405 METHOD NOT ALLOWED. If a request other than GET or HEAD comes in, the server will issue a 405 and include an Allow: after it.
-There are no error pages reporting!!!!!! If you get a 404 the server will not display anything, if requested from a browser. 
+The code is setup to initialize a socket with a port, and wait for an incoming connection. Once a connection is found, the program parses the request and determines if it's valid, and if the requested file exists/permissions/etc... If everything comes back OK the server will respond with the requested information, if there was an error, the server will respond with the proper HTTP code for the error.
