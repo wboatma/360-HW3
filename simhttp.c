@@ -171,14 +171,14 @@ int PARSE_HTTP_REQUEST(char * buffer, struct Request_Info * Requested_Info) {
 	int len = 0;
 
 	if (Header == 1) {
-		if (!strncmp(buffer, "GET /", 5)) {
-			Requested_Info->Http_Method = GET;
-			buffer += 4;
-		} else 	if (!strncmp(buffer, "GET /../", 8)) {
+		if (!strncmp(buffer, "GET /../", 8)) {
 			Requested_Info->Http_Method = GET;
 			Requested_Info->Http_Request_Status = 403;
 			buffer +=4;
-		}else if (!strncmp(buffer, "HEAD /", 6)) {
+		} else if (!strncmp(buffer, "GET /", 5)) {
+			Requested_Info->Http_Method = GET;
+			buffer += 4;
+		} else if (!strncmp(buffer, "HEAD /", 6)) {
 			Requested_Info->Http_Method = HEAD;
 			buffer += 5;
 		} else if (strncmp(buffer, "GET ", 4) == 0 && strncmp(buffer, "GET /", 5) != 0) {
